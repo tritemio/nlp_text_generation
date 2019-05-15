@@ -36,17 +36,19 @@ def sample_sequence(model, length, context, batch_size=None,
     if not sample:
         assert top_k > 0, f'top_k ({top_k}) needs to be >0 when sample=False'
     context = torch.tensor(context, device=device, dtype=torch.long).unsqueeze(0).repeat(batch_size, 1)
+    prev = context.clone()
+    output =  context.clone()
     past = None
     with torch.no_grad():
         for i in trange(length):
             # predict next token
-            print(f'context.shape = {context.shape}')
-            logits, past = model(context, past=past)
+            #print(f'context.shape = {context.shape}  past: {None if past is None else [t.shape for t in past]}')
+            logits, past = model(prev, past=past)
             vocab_size = logits.shape[-1]
-            assert logits.shape == (batch_size, context.shape[1], vocab_size)
-            print(f'logits.shape = {logits.shape}')
+            assert logits.shape == (batch_size, prev.shape[1], vocab_size)
+            #print(f'logits.shape = {logits.shape}')
             last_logits = logits[:, -1, :].clone() / temperature
-            print(f'last_logits.shape = {last_logits.shape}')
+            #print(f'last_logits.shape = {last_logits.shape}')
             # set part of the logits to 0, according to top_k or top_p schemes
             if top_p is None:
                 last_logits = top_k_logits(last_logits, k=top_k)
@@ -54,14 +56,15 @@ def sample_sequence(model, length, context, batch_size=None,
                 last_logits = top_p_logits(last_logits, p=top_p)
             log_probs = F.softmax(last_logits, dim=-1)
             if sample:
-                predicted_token = torch.multinomial(log_probs, num_samples=1)
+                predicted_index = torch.multinomial(log_probs, num_samples=1)
             else:
-                print(f'END[topk] logits.shape = {logits.shape}', flush=True)
+                #print(f'END[topk] logits.shape = {logits.shape}', flush=True)
                 topk = torch.topk(last_logits, k=top_k, dim=-1)
-                predicted_token = topk.indices[..., top_k - 1:top_k]
-                assert predicted_token == topk.indices[0, top_k - 1]
-            context = torch.cat((context, predicted_token), dim=1)
-    return context
+                predicted_index = topk.indices[..., top_k - 1:top_k]
+                assert predicted_index == topk.indices[0, top_k - 1]
+            prev = predicted_index
+            output = torch.cat((output, prev), dim=1)
+    return output
 
 
 def encode_transformer_xl(text, encoder, device):
@@ -90,7 +93,7 @@ def generate_text(
         length = -1,
         temperature = 1,
         top_k = 0,
-        top_p=None,
+        top_p = None,
         sample = True,
         seed = 0,
     ):
@@ -147,7 +150,7 @@ def generate_text_gpt2(
         length = -1,
         temperature = 1,
         top_k = 0,
-        top_p=None,
+        top_p = None,
         sample = True,
         seed = 0,
     ):
